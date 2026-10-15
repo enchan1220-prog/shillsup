@@ -63,12 +63,12 @@ components.html(
       const host = doc.querySelector('.stApp');
       if (!host) return;
       const previous = doc.getElementById('newspaper-ink');
-      if (previous?.dataset.version === '2') return;
+      if (previous?.dataset.version === '3') return;
       previous?.remove();
 
       const layer = doc.createElement('div');
       layer.id = 'newspaper-ink';
-      layer.dataset.version = '2';
+      layer.dataset.version = '3';
       layer.setAttribute('aria-hidden', 'true');
       layer.setAttribute('inert', '');
       const style = doc.createElement('style');
@@ -79,6 +79,9 @@ components.html(
           user-select: none; contain: strict;
         }
         #newspaper-ink * { pointer-events: none !important; }
+        #newspaper-ink .meteor-sky {
+          position: absolute; inset: 0; width: 100%; height: 100%;
+        }
         #newspaper-ink .ink-drop {
           position: absolute; top: -24px;
           width: var(--size); height: var(--size);
@@ -168,13 +171,179 @@ components.html(
       }
       host.appendChild(layer);
 
+      // Canvas로 불꼬리·발광 핵·암석·파편을 겹쳐 그리는 흑백 운석.
+      const win = window.parent;
+      const sky = doc.createElement('canvas');
+      sky.className = 'meteor-sky';
+      layer.appendChild(sky);
+      const ctx = sky.getContext('2d');
+      const reducedMotion = win.matchMedia('(prefers-reduced-motion: reduce)');
+      let width = 0, height = 0, frameId = 0, lastFrame = 0;
+      let untilMeteor = .35;
+      const meteors = [], sparks = [];
+      const random = (min, max) => min + Math.random() * (max - min);
+      const resizeSky = () => {
+        width = win.innerWidth;
+        height = win.innerHeight;
+        const ratio = Math.min(win.devicePixelRatio || 1, 1.5);
+        sky.width = Math.round(width * ratio);
+        sky.height = Math.round(height * ratio);
+        if (ctx) ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      };
+      resizeSky();
+      win.addEventListener('resize', resizeSky);
+
+      const spawnMeteor = () => {
+        const angle = random(1.95, 2.35);
+        const speed = random(520, 850);
+        const radius = random(5, 10);
+        meteors.push({
+          x: random(width * .35, width * 1.15), y: -100,
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+          ux: Math.cos(angle), uy: Math.sin(angle), radius,
+          tail: random(200, 420), age: 0, spin: random(0, Math.PI * 2),
+          rock: Array.from({length: 10}, () => random(.72, 1.15)),
+        });
+      };
+      const drawMeteor = (meteor, dt) => {
+        meteor.age += dt;
+        meteor.x += meteor.vx * dt;
+        meteor.y += meteor.vy * dt;
+        const {x, y, ux, uy, radius, tail} = meteor;
+        const visibility = Math.min(meteor.age * 4, 1);
+        ctx.save();
+        ctx.globalAlpha = visibility;
+
+        // 검은 그을음 위로 여러 겹의 빛을 쌓아 밝은 종이에서도 꼬리가 보이게 한다.
+        for (const [thickness, alpha, shade] of [
+          [radius * 3.6, .2, 10], [radius * 2.5, .5, 45],
+          [radius * 1.5, .75, 155], [radius * .7, .95, 235],
+          [1.4, 1, 255],
+        ]) {
+          const gradient = ctx.createLinearGradient(x, y, x - ux * tail, y - uy * tail);
+          gradient.addColorStop(0, `rgba(${shade},${shade},${shade},${alpha})`);
+          gradient.addColorStop(.3, `rgba(${shade},${shade},${shade},${alpha * .65})`);
+          gradient.addColorStop(1, `rgba(${shade},${shade},${shade},0)`);
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.moveTo(x + uy * thickness, y - ux * thickness);
+          ctx.quadraticCurveTo(x - ux * tail * .5 + uy * thickness * .4,
+            y - uy * tail * .5 - ux * thickness * .4, x - ux * tail, y - uy * tail);
+          ctx.quadraticCurveTo(x - ux * tail * .5 - uy * thickness * .4,
+            y - uy * tail * .5 + ux * thickness * .4, x - uy * thickness, y + ux * thickness);
+          ctx.closePath();
+          ctx.fill();
+        }
+        const halo = ctx.createRadialGradient(x, y, 0, x, y, radius * 5);
+        halo.addColorStop(0, 'rgba(255,255,255,.95)');
+        halo.addColorStop(.25, 'rgba(230,230,230,.65)');
+        halo.addColorStop(1, 'rgba(35,35,35,0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.translate(x, y);
+        ctx.rotate(meteor.spin + meteor.age * 2);
+        const rockShade = ctx.createRadialGradient(-radius * .4, -radius * .3, 0, 0, 0, radius);
+        rockShade.addColorStop(0, '#e5e5e5');
+        rockShade.addColorStop(.45, '#686868');
+        rockShade.addColorStop(1, '#111');
+        ctx.fillStyle = rockShade;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.3;
+        ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        meteor.rock.forEach((scale, i) => {
+          const a = i / meteor.rock.length * Math.PI * 2;
+          const px = Math.cos(a) * radius * scale, py = Math.sin(a) * radius * scale;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#222';
+        ctx.beginPath();
+        ctx.ellipse(-radius * .2, radius * .15, radius * .24, radius * .17, .4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 경과 시간에 맞춰 파편을 방출하여 화면 속도에 따른 차이를 줄인다.
+        if (sparks.length < 110 && Math.random() < dt * 45) {
+          const life = random(.25, .75);
+          sparks.push({x, y, vx: meteor.vx * .2 + random(-100, 100),
+            vy: meteor.vy * .2 + random(-100, 100), life, maxLife: life,
+            size: random(.8, 2.6)});
+        }
+      };
+      const animateSky = now => {
+        frameId = 0;
+        if (!layer.isConnected || doc.hidden || reducedMotion.matches || !ctx) return;
+        // 약 30fps로 제한하여 통계 그래프 조작에 필요한 여유를 남긴다.
+        if (lastFrame && now - lastFrame < 32) {
+          frameId = win.requestAnimationFrame(animateSky);
+          return;
+        }
+        const dt = lastFrame ? Math.min((now - lastFrame) / 1000, .06) : .033;
+        lastFrame = now;
+        ctx.clearRect(0, 0, width, height);
+        untilMeteor -= dt;
+        if (untilMeteor <= 0 && meteors.length < 3) {
+          spawnMeteor();
+          untilMeteor = random(1.2, 3.2);
+        }
+        for (let i = meteors.length - 1; i >= 0; i--) {
+          drawMeteor(meteors[i], dt);
+          if (meteors[i].y > height + 450 || meteors[i].x < -450) meteors.splice(i, 1);
+        }
+        for (let i = sparks.length - 1; i >= 0; i--) {
+          const spark = sparks[i];
+          spark.life -= dt;
+          if (spark.life <= 0) { sparks.splice(i, 1); continue; }
+          spark.x += spark.vx * dt;
+          spark.y += spark.vy * dt;
+          spark.vy += 100 * dt;
+          ctx.globalAlpha = spark.life / spark.maxLife;
+          ctx.strokeStyle = '#333';
+          ctx.lineWidth = spark.size + 1;
+          ctx.beginPath();
+          ctx.moveTo(spark.x, spark.y);
+          ctx.lineTo(spark.x - spark.vx * .025, spark.y - spark.vy * .025);
+          ctx.stroke();
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = spark.size * .5;
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        frameId = win.requestAnimationFrame(animateSky);
+      };
+      const syncSky = () => {
+        if (frameId) win.cancelAnimationFrame(frameId);
+        frameId = 0;
+        lastFrame = 0;
+        if (reducedMotion.matches && ctx) ctx.clearRect(0, 0, width, height);
+        if (!doc.hidden && !reducedMotion.matches && layer.isConnected && ctx) {
+          frameId = win.requestAnimationFrame(animateSky);
+        }
+      };
+      reducedMotion.addEventListener('change', syncSky);
+      syncSky();
+
       // 비활성 탭에서는 애니메이션을 쉬고, 화면을 떠나면 감시도 해제한다.
-      const pause = () => layer.classList.toggle('ink-paused', doc.hidden);
+      const pause = () => {
+        layer.classList.toggle('ink-paused', doc.hidden);
+        syncSky();
+      };
       doc.addEventListener('visibilitychange', pause);
       pause();
       const observer = new window.parent.MutationObserver(() => {
         if (!layer.isConnected) {
           doc.removeEventListener('visibilitychange', pause);
+          win.removeEventListener('resize', resizeSky);
+          reducedMotion.removeEventListener('change', syncSky);
+          if (frameId) win.cancelAnimationFrame(frameId);
           observer.disconnect();
         }
       });
