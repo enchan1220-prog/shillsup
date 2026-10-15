@@ -4,7 +4,7 @@ import streamlit as st
 
 
 DATA_URL = (
-    "https://raw.githubusercontent.com/enchan1220-prog/contents/"
+    "https://raw.githubusercontent.com/first2022-cyber/contents/"
     "main/population_ts_yearly_gender.zip"
 )
 AGES = [f"{age}세" for age in range(100)] + ["100세 이상"]
@@ -28,7 +28,10 @@ st.markdown(
     .stSelectbox [data-baseweb="select"] > div {
         background: #fffefa; color: #181818; border-color: #777; border-radius: 0;
     }
-    [data-testid="stMetric"] { border-top: 1px solid #181818; padding-top: 10px; }
+    [data-testid="stMetric"] {
+        border: 1px solid #777; border-top: 3px double #181818;
+        padding: 16px; background: #fffefa;
+    }
     [data-testid="stMetricLabel"], [data-testid="stMetricValue"],
     [data-testid="stWidgetLabel"], [data-testid="stCaptionContainer"] {
         color: #181818;
@@ -130,11 +133,35 @@ except ValueError as exc:
 place = " ".join(part for part in (province, district, town) if part)
 st.subheader(f"{town}의 人口 構成")
 st.caption(place)
-total_male, total_female = int(male.sum()), int(female.sum())
+age_population = male + female
+total_population = int(age_population.sum())
+child_population = int(age_population[:15].sum())
+elderly_population = int(age_population[65:].sum())
+# 100세 이상 구간은 대표 연령을 100세로 두어 평균을 추산한다.
+if total_population > 0:
+    average_age = sum(
+        age * count for age, count in enumerate(age_population)
+    ) / total_population
+    elderly_rate = elderly_population / total_population * 100
+    child_rate = child_population / total_population * 100
+else:
+    average_age = elderly_rate = child_rate = None
+
+# 반올림한 표시값이 아닌 실제 비율로 20% 초과 여부를 판단한다.
+aging_attention = total_population > 0 and elderly_population * 5 > total_population
 m1, m2, m3 = st.columns(3)
-m1.metric("總人口", f"{total_male + total_female:,}명")
-m2.metric("男子", f"{total_male:,}명")
-m3.metric("女子", f"{total_female:,}명")
+m1.metric("總人口 · 총인구", f"{total_population:,}명")
+m2.metric(
+    "平均年齡 · 평균연령",
+    f"{average_age:.1f}세" if average_age is not None else "—",
+    help="男女 合計의 年齡別 人口로 加重平均하였읍니다. 100세 이상은 100세로 보아 算出한 推算値입니다.",
+)
+m3.metric(
+    "高齡化率 · 고령화율" + ("  ⚠︎ 注意" if aging_attention else ""),
+    f"{elderly_rate:.1f}%" if elderly_rate is not None else "—",
+    help="總人口 가운데 65세 이상 人口의 比率입니다. 20%를 넘으면 注意 標識을 붙입니다.",
+)
+st.caption("算出 基準 | 平均年齡은 100세 이상을 100세로 본 推算値이며, 高齡化率은 65세 이상 人口의 比率입니다.")
 
 fig = go.Figure()
 for name, counts, sign, color in (
@@ -196,6 +223,20 @@ assert fig.layout.yaxis.ticktext[-1] == "100세 이상"
 assert fig.layout.yaxis.range[0] < fig.layout.yaxis.range[1]
 
 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+if total_population == 0:
+    population_comment = "登錄된 人口가 없어 아이와 어르신의 分布를 견주기 어렵습니다."
+else:
+    if child_population > elderly_population:
+        comparison = "어르신보다 아이가 많은 고장입니다."
+    elif elderly_population > child_population:
+        comparison = "아이보다 어르신이 많은 고장입니다."
+    else:
+        comparison = "아이와 어르신의 人口가 같은 고장입니다."
+    population_comment = (
+        f"0~14세 아이는 {child_rate:.1f}%, 65세 이상 어르신은 {elderly_rate:.1f}%로, "
+        + comparison
+    )
+st.markdown(f"**鄕土의 世代 |** {population_comment}")
 st.caption("圖表 解說 | 맨 아래에 0세, 맨 위에 100세 이상을 두었읍니다. 左側은 男子, 右側은 女子이며, 兩便 눈금은 實際 人口數입니다.")
 st.divider()
 st.caption(f"資料: 全國 邑·面·洞 年齡別 人口 · {year}年 | 鄕土의 오늘을 記錄하다")
