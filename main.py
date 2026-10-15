@@ -9,7 +9,7 @@ DATA_URL = (
 )
 AGES = [f"{age}세" for age in range(100)] + ["100세 이상"]
 
-st.set_page_config(page_title="洞네 人口新聞", page_icon="📰", layout="wide")
+st.set_page_config(page_title="동네 人口新聞", page_icon="📰", layout="wide")
 st.markdown(
     """
     <style>
@@ -37,7 +37,7 @@ st.markdown(
     <div class="masthead">
       <div class="edition">地域統計 · 人口特輯</div>
       <h1>동네별 人口 피라미드</h1>
-      <p>우리 고장의 世代를 읽다 — 邑·面·洞 男女 年齡別 人口誌</p>
+      <p>우리 고장의 世代를 살피다 ― 邑·面·洞 男女 年齡別 人口誌</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -58,46 +58,54 @@ def load_latest_population():
     ]
     missing = [column for column in required if column not in frame.columns]
     if missing:
-        raise ValueError("필수 열이 없습니다: " + ", ".join(missing[:8]))
+        raise ValueError("資料에 필요한 項目이 없읍니다: " + ", ".join(missing[:8]))
 
     years = pd.to_numeric(frame["연도"], errors="coerce")
     if years.notna().sum() == 0:
-        raise ValueError("연도 열에 유효한 연도가 없습니다.")
+        raise ValueError("年度 項目에 올바른 年度가 없읍니다.")
     latest_year = int(years.max())
     frame = frame.loc[years.eq(latest_year), required].copy()
     for column in ("시도", "시군구", "동"):
         frame[column] = frame[column].fillna("").astype(str).str.strip()
     frame = frame.loc[frame["시도"].ne("") & frame["동"].ne("")]
     if frame.empty:
-        raise ValueError("최신 연도의 읍·면·동 자료가 없습니다.")
+        raise ValueError("最近 年度의 邑·面·洞 資料가 없읍니다.")
     return frame, latest_year
 
 
 try:
-    with st.spinner("人口 原簿를 불러오는 중입니다…"):
+    with st.spinner("人口 資料를 펼쳐 보는 중입니다…"):
         population, year = load_latest_population()
 except Exception as exc:
-    st.error("人口 자료를 불러오지 못하였습니다. 원본 CSV 주소와 공개 여부를 확인하여 주십시오.")
-    with st.expander("연결 오류 詳細"):
+    st.error("人口 資料를 불러오지 못하였읍니다. 原本 資料의 所在와 公開 與否를 確認하여 주십시오.")
+    with st.expander("資料 接續 障礙의 內譯"):
         st.code(str(exc), language="text")
         st.write(DATA_URL)
     st.stop()
 
-st.caption(f"資料年度 {year}年 · 원본에 수록된 가장 최신 연도 · 單位: 명")
+st.caption(f"資料年度 {year}年 · 原本 所載 最近 年度 · 單位: 명")
+# 1960년대 문체 재현: '-ㅂ니다'는 유지하고 '있-/없-/하였-' 뒤에는
+# 옛 표기 '-읍니다'를 쓴다. 모든 '-습니다'를 일괄 치환하지 않는다.
+# 근거: 국립국어원 『국어생활』 1988년 가을호 「물음과 대답」
+# https://www.korean.go.kr/nkview/nklife/1988_3/14_19.html
+st.markdown(
+    "本欄에는 우리 고장의 男女 年齡別 人口를 圖表로 실었읍니다. "
+    "市·道, 市·郡·區, 邑·面·洞을 차례로 고르시면 各 世代의 分布를 살펴보실 수 있읍니다."
+)
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    province = st.selectbox("一. 시도 選擇", sorted(population["시도"].unique()))
+    province = st.selectbox("一. 市·道 選擇", sorted(population["시도"].unique()))
 province_rows = population.loc[population["시도"].eq(province)]
 with col2:
     district = st.selectbox(
-        "二. 시군구 選擇",
+        "二. 市·郡·區 選擇",
         sorted(province_rows["시군구"].unique()),
-        format_func=lambda value: value or "시군구 구분 없음",
+        format_func=lambda value: value or "市·郡·區 區分 없음",
     )
 district_rows = province_rows.loc[province_rows["시군구"].eq(district)]
 with col3:
-    town = st.selectbox("三. 읍·면·동 選擇", sorted(district_rows["동"].unique()))
+    town = st.selectbox("三. 邑·面·洞 選擇", sorted(district_rows["동"].unique()))
 selected = district_rows.loc[district_rows["동"].eq(town)]
 
 
@@ -109,7 +117,7 @@ def age_counts(sex):
         )
     )
     if values.isna().any().any() or values.lt(0).any().any():
-        raise ValueError("연령별 인구에 결측값 또는 유효하지 않은 수치가 있습니다.")
+        raise ValueError("年齡別 人口에 빠진 數値 또는 올바르지 않은 數値가 있읍니다.")
     return values.sum(axis=0).to_numpy()
 
 
@@ -188,6 +196,6 @@ assert fig.layout.yaxis.ticktext[-1] == "100세 이상"
 assert fig.layout.yaxis.range[0] < fig.layout.yaxis.range[1]
 
 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-st.caption("圖表 解說 | 맨 아래는 0세, 맨 위는 100세 이상. 좌측은 男子, 우측은 女子이며 양쪽 눈금은 실제 인구수입니다.")
+st.caption("圖表 解說 | 맨 아래에 0세, 맨 위에 100세 이상을 두었읍니다. 左側은 男子, 右側은 女子이며, 兩便 눈금은 實際 人口數입니다.")
 st.divider()
-st.caption(f"資料: 제공된 전국 읍·면·동 연령별 인구 CSV · {year}年 | 地域의 오늘을 기록하다")
+st.caption(f"資料: 全國 邑·面·洞 年齡別 人口 · {year}年 | 鄕土의 오늘을 記錄하다")
