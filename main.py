@@ -61,10 +61,14 @@ components.html(
         return; // 상위 문서 접근이 제한되면 통계 화면은 그대로 표시한다.
       }
       const host = doc.querySelector('.stApp');
-      if (!host || doc.getElementById('newspaper-ink')) return;
+      if (!host) return;
+      const previous = doc.getElementById('newspaper-ink');
+      if (previous?.dataset.version === '2') return;
+      previous?.remove();
 
       const layer = doc.createElement('div');
       layer.id = 'newspaper-ink';
+      layer.dataset.version = '2';
       layer.setAttribute('aria-hidden', 'true');
       layer.setAttribute('inert', '');
       const style = doc.createElement('style');
@@ -86,31 +90,33 @@ components.html(
         }
         @keyframes newspaper-ink-fall {
           0% { transform: translate3d(0, -25px, 0) rotate(0deg); opacity: 0; }
-          12% { opacity: .19; }
-          85% { opacity: .12; }
+          12% { opacity: .48; }
+          85% { opacity: .3; }
           100% {
             transform: translate3d(var(--drift), 105vh, 0) rotate(240deg);
             opacity: 0;
           }
         }
         #newspaper-ink .ink-brush {
-          position: absolute; width: clamp(65px, 10vw, 145px); height: 42px;
+          position: absolute; width: var(--width); height: var(--height);
           transform-origin: left center;
           border-radius: 65% 14% 55% 24%;
           background:
             repeating-linear-gradient(177deg, transparent 0 3px, #181818 4px 6px,
               transparent 7px 9px),
-            linear-gradient(90deg, #181818 0%, #333 55%, transparent 100%);
+            linear-gradient(90deg, #080808 0%, #181818 65%, transparent 100%);
           clip-path: polygon(0 25%, 13% 11%, 45% 17%, 91% 0, 75% 23%,
             100% 30%, 82% 47%, 96% 60%, 69% 66%, 83% 88%, 30% 81%, 0 100%);
-          animation: newspaper-ink-brush 18s ease-in-out infinite;
+          animation: newspaper-ink-brush var(--duration) cubic-bezier(.16,.85,.3,1) infinite;
           animation-delay: var(--delay);
           opacity: 0;
         }
         @keyframes newspaper-ink-brush {
-          0%, 2% { transform: rotate(var(--angle)) scaleX(0); opacity: 0; }
-          10%, 24% { transform: rotate(var(--angle)) scaleX(1); opacity: .15; }
-          65%, 100% { transform: rotate(var(--angle)) scaleX(1); opacity: 0; }
+          0% { transform: rotate(var(--angle)) scale(.02, .55); opacity: 0; }
+          7% { opacity: var(--ink-opacity); }
+          17% { transform: rotate(var(--angle)) scale(1, 1.15); opacity: var(--ink-opacity); }
+          29% { transform: translateX(var(--sweep)) rotate(var(--angle)) scale(1.06, 1); opacity: var(--ink-opacity); }
+          66%, 100% { transform: translateX(var(--sweep)) rotate(var(--angle)) scale(1.1, .9); opacity: 0; }
         }
         #newspaper-ink.ink-paused * { animation-play-state: paused; }
         @media (prefers-reduced-motion: reduce) {
@@ -118,39 +124,48 @@ components.html(
           #newspaper-ink * { animation: none !important; }
         }
         @media (max-width: 640px) {
-          #newspaper-ink .ink-drop { background: #777; }
-          #newspaper-ink .ink-brush { width: 48px; height: 24px; }
+          #newspaper-ink .ink-brush { height: calc(var(--height) * .65); }
         }
       `;
       layer.appendChild(style);
 
-      // 먹방울은 좌우 여백 위주로 흩날리게 하여 도표의 가독성을 지킨다.
-      for (let i = 0; i < 16; i++) {
+      // 먹방울은 지면 전체에 흩날리고, 한 주기마다 자리를 바꾼다.
+      const scatterDrop = drop => {
+        drop.style.left = `${Math.random() * 100}%`;
+        drop.style.setProperty('--size', `${2 + Math.random() * 8}px`);
+        drop.style.setProperty('--drift', `${Math.random() * 180 - 90}px`);
+      };
+      for (let i = 0; i < 28; i++) {
         const drop = doc.createElement('span');
         drop.className = 'ink-drop';
-        drop.style.left = `${i % 2 ? 94 + Math.random() * 5 : Math.random() * 6}%`;
-        drop.style.setProperty('--size', `${3 + Math.random() * 5}px`);
-        drop.style.setProperty('--duration', `${14 + Math.random() * 14}s`);
-        drop.style.setProperty('--delay', `${-Math.random() * 28}s`);
-        drop.style.setProperty('--drift', `${Math.random() * 32 - 16}px`);
+        scatterDrop(drop);
+        drop.style.setProperty('--duration', `${6 + Math.random() * 8}s`);
+        drop.style.setProperty('--delay', `${-Math.random() * 14}s`);
+        drop.addEventListener('animationiteration', () => scatterDrop(drop));
         layer.appendChild(drop);
       }
-      [{left: '-16px', top: '24%', angle: '-14deg', delay: '0s'},
-       {right: '-24px', top: '61%', angle: '-16deg', delay: '-7s'},
-       {left: '-28px', top: '88%', angle: '-8deg', delay: '-12s'}]
-        .forEach(position => {
+      // 여러 붓의 주기를 엇갈리게 하고, 매번 위치·방향·농담을 새로 뽑는다.
+      const randomizeBrush = brush => {
+        const fromRight = Math.random() > .5;
+        brush.style.left = fromRight ? 'auto' : `${Math.random() * 38 - 5}vw`;
+        brush.style.right = fromRight ? `${Math.random() * 38 - 5}vw` : 'auto';
+        brush.style.top = `${8 + Math.random() * 84}%`;
+        brush.style.transformOrigin = fromRight ? 'right center' : 'left center';
+        brush.style.setProperty('--width', `${30 + Math.random() * 38}vw`);
+        brush.style.setProperty('--height', `${28 + Math.random() * 68}px`);
+        brush.style.setProperty('--angle', `${Math.random() * 66 - 33}deg`);
+        brush.style.setProperty('--ink-opacity', `${.38 + Math.random() * .3}`);
+        brush.style.setProperty('--sweep', `${(fromRight ? -1 : 1) * (8 + Math.random() * 32)}px`);
+      };
+      for (let i = 0; i < 5; i++) {
           const brush = doc.createElement('span');
           brush.className = 'ink-brush';
-          brush.style.top = position.top;
-          if (position.left) brush.style.left = position.left;
-          if (position.right) {
-            brush.style.right = position.right;
-            brush.style.transformOrigin = 'right center';
-          }
-          brush.style.setProperty('--angle', position.angle);
-          brush.style.setProperty('--delay', position.delay);
+          randomizeBrush(brush);
+          brush.style.setProperty('--duration', `${2.6 + Math.random() * 2}s`);
+          brush.style.setProperty('--delay', `${-Math.random() * 4.6}s`);
+          brush.addEventListener('animationiteration', () => randomizeBrush(brush));
           layer.appendChild(brush);
-        });
+      }
       host.appendChild(layer);
 
       // 비활성 탭에서는 애니메이션을 쉬고, 화면을 떠나면 감시도 해제한다.
